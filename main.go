@@ -3,11 +3,20 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/daniel13112001/scout/commands"
 )
+
+type Command func([]string) error
 
 func main() {
 
 	args := os.Args
+
+	commandMap := map[string]Command{
+		"find":  commands.Find,
+		"index": commands.Index,
+	}
 
 	if len(args) < 2 {
 
@@ -28,18 +37,15 @@ func main() {
 
 	}
 
-	switch args[1] {
-	case "find", "f":
-		fmt.Println("scout is searching for ...")
-	case "index", "i":
-		fmt.Println("scout is indexing files ...")
-	case "sync", "s":
-		fmt.Println("scout is syncing...")
-	case "help", "h":
-		fmt.Println("usage ...")
-	default:
-		fmt.Printf("Unrecognized command %v", args[0])
+	// args[1] not args[2] because commands expect the name of the command as the first parameter.
+	// this is to keep similar behaviour to os.Args where args[0] is the file name and args[1]: are the relevant params
+	cmd, ok := commandMap[args[1]]
 
+	if !ok {
+		fmt.Printf("Unrecognized command. %v is not a valid command\n", args[1])
+		return
 	}
+
+	cmd(args[1:])
 
 }
