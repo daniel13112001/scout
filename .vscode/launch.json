@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "scout",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+            ]
+        }
+    ]
+}
