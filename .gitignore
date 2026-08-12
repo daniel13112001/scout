@@ -1,0 +1,8 @@
+# Go build artifacts
+/scout
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
