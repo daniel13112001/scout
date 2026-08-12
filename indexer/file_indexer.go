@@ -14,7 +14,7 @@ type FileIndexer struct {
 
 func NewFileIndexer(db *sql.DB, embedder embedder.Embedder) (*FileIndexer, error) {
 
-	if db == nil{
+	if db == nil {
 		return nil, errors.New("db is nil. cannot initialize file indexer with valid db.")
 	}
 	return &FileIndexer{
@@ -24,7 +24,6 @@ func NewFileIndexer(db *sql.DB, embedder embedder.Embedder) (*FileIndexer, error
 
 }
 
-
-func (*FileIndexer) Index() error{
+func (*FileIndexer) Index(dir string, extensions string) error {
 	return nil
 }
