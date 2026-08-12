@@ -3,9 +3,10 @@ package commands
 import (
 	"flag"
 	"fmt"
+	"path/filepath"
 )
 
-type IndexCommandOptions struct {
+type indexCommandOptions struct {
 	isRecursive bool
 	extensions  string
 }
@@ -26,17 +27,23 @@ func Index(args []string) error {
 	ext := fs.String("extensions", "", "specify file extensions to restrict indexing to")
 
 	fs.Parse(args[2:])
-	params := IndexCommandOptions{*recurse, *ext}
+	optionalFlags := indexCommandOptions{*recurse, *ext}
 
-	index(dir, params)
+	absPath, err := filepath.Abs(dir)
+
+	if err != nil {
+		return fmt.Errorf("Unable to resolve path %v. Error: %v", dir, err.Error())
+	}
+
+	index(absPath, optionalFlags)
 
 	return nil
 
 }
 
-func index(dir string, optionalFlags IndexCommandOptions) error {
+func index(path string, optionalFlags indexCommandOptions) error {
 
-	fmt.Printf("Indexing %v with the following flags: isRecursive: %v, extensions %v", dir, optionalFlags.isRecursive, optionalFlags.extensions)
+	fmt.Printf("Indexing %v with the following flags: isRecursive: %v, extensions %v", path, optionalFlags.isRecursive, optionalFlags.extensions)
 
 	return nil
 

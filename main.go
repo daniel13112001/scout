@@ -46,6 +46,10 @@ func main() {
 		return
 	}
 
-	cmd(args[1:])
+	err := cmd(args[1:])
+
+	if err != nil {
+		fmt.Println(err)
+	}
 
 }
