@@ -2,11 +2,13 @@ package commands
 
 import (
 	"fmt"
+	"context"
 
 	"github.com/daniel13112001/scout/cli"
+	"github.com/daniel13112001/scout/app"
 )
 
-func Help(args cli.ParsedArgs) error {
+func Help(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) error {
 
 	usage := `
 		Usage:

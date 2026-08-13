@@ -1,9 +1,11 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
+	"github.com/daniel13112001/scout/app"
 	"github.com/daniel13112001/scout/cli"
 )
 
@@ -12,7 +14,7 @@ type indexCommandOptions struct {
 	extensions  string
 }
 
-func Index(args cli.ParsedArgs) error {
+func Index(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) error {
 
 	if len(args.Positional) == 0 {
 		return fmt.Errorf("Index command requires a folder path to index")
@@ -42,7 +44,7 @@ func Index(args cli.ParsedArgs) error {
 		return fmt.Errorf("Unable to resolve path %v. Error: %v", dir, err.Error())
 	}
 
-	index(absPath, optionalFlags)
+	return index(absPath, optionalFlags)
 
 	return nil
 

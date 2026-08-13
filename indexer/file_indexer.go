@@ -24,6 +24,10 @@ func NewFileIndexer(db *sql.DB, embedder embedder.Embedder) (*FileIndexer, error
 
 }
 
+// The file indexer receives a path to a directory
+// Its job is to recursively walk the directory, embed every file 
+// and write the file with metadata to the db.
 func (*FileIndexer) Index(dir string, extensions string) error {
+	
 	return nil
 }

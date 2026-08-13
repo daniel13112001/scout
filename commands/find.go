@@ -3,8 +3,10 @@ package commands
 import (
 	"fmt"
 	"strconv"
+	"context"
 
 	"github.com/daniel13112001/scout/cli"
+	"github.com/daniel13112001/scout/app"
 )
 
 type FindCommandOptions struct {
@@ -12,7 +14,7 @@ type FindCommandOptions struct {
 	restrict string
 }
 
-func Find(args cli.ParsedArgs) error {
+func Find(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) error {
 
 	if len(args.Positional) == 0 {
 		return fmt.Errorf("Find command requires a query to search for")

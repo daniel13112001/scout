@@ -3,15 +3,17 @@ package commands
 import (
 	"fmt"
 	"path/filepath"
+	"context"
 
 	"github.com/daniel13112001/scout/cli"
+	"github.com/daniel13112001/scout/app"
 )
 
 type syncCommandOptions struct {
 	isRecursive bool
 }
 
-func Sync(args cli.ParsedArgs) error {
+func Sync(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) error {
 
 	if len(args.Positional) > 1 {
 		return fmt.Errorf("sync accepts at most one path, got %d: %v", len(args.Positional), args.Positional)

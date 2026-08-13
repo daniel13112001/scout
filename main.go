@@ -1,14 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/daniel13112001/scout/cli"
 	"github.com/daniel13112001/scout/commands"
+	"github.com/daniel13112001/scout/indexer"
+	"github.com/daniel13112001/scout/app"
 )
 
-type Command func(cli.ParsedArgs) error
 
 func main() {
 
