@@ -25,6 +25,19 @@
                 ".txt"
 
             ]
-        }
+        },
+        {
+            "name": "scout sync",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "sync",
+                // "~/Documents",
+                // "-recursive",
+                // "false",
+
+            ]
+        },
     ]
 }

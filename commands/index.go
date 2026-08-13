@@ -1,9 +1,10 @@
 package commands
 
 import (
-	"flag"
 	"fmt"
 	"path/filepath"
+
+	"github.com/daniel13112001/scout/cli"
 )
 
 type indexCommandOptions struct {
@@ -11,23 +12,29 @@ type indexCommandOptions struct {
 	extensions  string
 }
 
-func Index(args []string) error {
+func Index(args cli.ParsedArgs) error {
 
-	if len(args) < 2 {
+	if len(args.Positional) == 0 {
 		return fmt.Errorf("Index command requires a folder path to index")
 	}
 
-	dir := args[1]
+	if len(args.Positional) > 1 {
+		return fmt.Errorf("index accepts at most one path, got %d: %v", len(args.Positional), args.Positional)
+	}
 
-	fs := flag.NewFlagSet("index", flag.ContinueOnError)
+	dir := args.Positional[0]
 
-	recurse := fs.Bool("recursive", true, "whether sub-directories should also be indexed. the default is true.")
+	recurse, err := boolFlag(args, "recursive", true)
+
+	if err != nil {
+		return err
+	}
+
 	// TODO. Add support for extensions. What should the syntax be? comma separated list? Or multiple -extensions?
 	// For now this allows just one extension
-	ext := fs.String("extensions", "", "specify file extensions to restrict indexing to")
+	ext := args.Flags["extensions"]
 
-	fs.Parse(args[2:])
-	optionalFlags := indexCommandOptions{*recurse, *ext}
+	optionalFlags := indexCommandOptions{recurse, ext}
 
 	absPath, err := filepath.Abs(dir)
 

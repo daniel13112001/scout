@@ -1,8 +1,10 @@
 package commands
 
 import (
-	"flag"
 	"fmt"
+	"strconv"
+
+	"github.com/daniel13112001/scout/cli"
 )
 
 type FindCommandOptions struct {
@@ -10,21 +12,33 @@ type FindCommandOptions struct {
 	restrict string
 }
 
-func Find(args []string) error {
+func Find(args cli.ParsedArgs) error {
 
-	if len(args) < 2 {
+	if len(args.Positional) == 0 {
 		return fmt.Errorf("Find command requires a query to search for")
 	}
 
-	query := args[1]
+	if len(args.Positional) > 1 {
+		return fmt.Errorf("find accepts at most one query, got %d: %v", len(args.Positional), args.Positional)
+	}
 
-	fs := flag.NewFlagSet("find", flag.ContinueOnError)
+	query := args.Positional[0]
 
-	max := fs.Int("max", 5, "the max number of matches to return. Default is 5")
-	restrict := fs.String("restrict", "", "the directory to restrict the search to. Default is none, i.e global search")
+	max := 5
 
-	fs.Parse(args[2:])
-	findCommandParams := FindCommandOptions{*max, *restrict}
+	if value, ok := args.Flags["max"]; ok {
+		parsedMax, err := strconv.Atoi(value)
+
+		if err != nil {
+			return fmt.Errorf("invalid value %q for --max: expected an integer", value)
+		}
+
+		max = parsedMax
+	}
+
+	restrict := args.Flags["restrict"]
+
+	findCommandParams := FindCommandOptions{max, restrict}
 
 	search(query, findCommandParams)
 
