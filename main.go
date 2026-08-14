@@ -5,22 +5,25 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/daniel13112001/scout/app"
 	"github.com/daniel13112001/scout/cli"
 	"github.com/daniel13112001/scout/commands"
 	"github.com/daniel13112001/scout/indexer"
-	"github.com/daniel13112001/scout/app"
-)
 
+	"database/sql"
+
+	_ "modernc.org/sqlite"
+)
 
 func main() {
 
 	args := os.Args
 
-	commandMap := map[string]Command{
-		"find":  commands.Find,
-		"index": commands.Index,
-		"help": commands.Help,
-		"sync": commands.Sync,
+	commandMap := map[string]commands.Command{
+		"find":   commands.Find,
+		"index":  commands.Index,
+		"help":   commands.Help,
+		"sync":   commands.Sync,
 		"config": commands.Config,
 	}
 
@@ -50,6 +53,25 @@ func main() {
 		return
 	}
 
+	db, err := sql.Open("sqlite", "scout.db")
+
+	if err != nil {
+		fmt.Println("unable to initialize database: ", err)
+		return
+	}
+
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		fmt.Println("database unavailable. shutting down: ", err)
+		return
+	}
+
+	// Construct application dependencies
+	ctx := context.Background()
+	deps := app.Dependencies{
+		FileIndexer: &indexer.FileIndexer{},
+	}
 	parsedArgs, err := cli.Parse(args[2:])
 
 	if err != nil {
@@ -57,7 +79,7 @@ func main() {
 		return
 	}
 
-	err = cmd(parsedArgs)
+	err = cmd(ctx, parsedArgs, deps)
 
 	if err != nil {
 		fmt.Println(err)

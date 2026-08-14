@@ -5,5 +5,5 @@ import (
 )
 
 type Dependencies struct {
-	fileIndexer *indexer.FileIndexer
+	FileIndexer *indexer.FileIndexer
 }
