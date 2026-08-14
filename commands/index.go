@@ -44,9 +44,8 @@ func Index(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) erro
 		return fmt.Errorf("Unable to resolve path %v. Error: %v", dir, err.Error())
 	}
 
-	return index(absPath, optionalFlags)
-
-	return nil
+	return deps.FileIndexer.IndexDirectory(absPath, optionalFlags.extensions)
+	//return index(absPath, optionalFlags)
 
 }
 
