@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY,
+    path TEXT NOT NULL , 
+    modified_at INTEGER NOT NULL
+);
+

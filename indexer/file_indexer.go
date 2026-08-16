@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"sync"
-	"time"
 
 	"path/filepath"
 
@@ -14,8 +14,15 @@ import (
 )
 
 type FileIndexer struct {
-	db       *sql.DB
-	embedder embedder.Embedder
+	Db       *sql.DB
+	Embedder embedder.Embedder
+}
+
+type ProcessFileResult struct {
+	isCompleteSuccess bool
+	isPartialSuccess  bool
+	isCompleteFailure bool
+	failedChunkErrors []error
 }
 
 func NewFileIndexer(db *sql.DB, embedder embedder.Embedder) (*FileIndexer, error) {
@@ -24,8 +31,8 @@ func NewFileIndexer(db *sql.DB, embedder embedder.Embedder) (*FileIndexer, error
 		return nil, errors.New("db is nil. cannot initialize file indexer with valid db.")
 	}
 	return &FileIndexer{
-		db:       db,
-		embedder: embedder,
+		Db:       db,
+		Embedder: embedder,
 	}, nil
 
 }
@@ -52,14 +59,14 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 		if d.IsDir() {
 			return nil
 		}
-		// TODO add logic for filtering by allowed extensions	
+		// TODO add logic for filtering by allowed extensions
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			e := fi.processFile(path)
-			if e != nil {
-				errCh <- e
+			_, p := fi.processFile(path)
+			if p != nil {
+				errCh <- p
 			}
 		}()
 
@@ -67,19 +74,83 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 	})
 
 	go func() {
-	wg.Wait()
-	close(errCh)
+		wg.Wait()
+		close(errCh)
 	}()
 
-
-	for err := range errCh{
+	for err := range errCh {
 		return err
 	}
 	return nil
 }
 
-func (fi *FileIndexer) processFile(path string) error {
-	time.Sleep(1000 * time.Millisecond)
-	fmt.Println(path)
-	return nil
+// ProcessFile takes the path to a file, reads and chunks its contents,
+// embeds each chunk, and writes the resulting embeddings and metadata
+// to the database.
+//
+// A failure that prevents the file from being processed at all, such as
+// being unable to read the file or chunk its contents, is returned as a
+// standard error.
+//
+// Individual chunk failures do not stop processing the remaining chunks.
+// Instead, the errors are recorded in ProcessFileResult.failedChunkErrors.
+// This allows the file to be partially indexed even if some chunks fail.
+//
+// On complete success, ProcessFileResult.isCompleteSuccess is true.
+// If one or more chunks fail but the remaining chunks are processed,
+// ProcessFileResult.isPartialSuccess is true.
+func (fi *FileIndexer) processFile(path string) (ProcessFileResult, error) {
+
+	res := ProcessFileResult{}
+
+	content, err := ReadFile(path)
+	if err != nil {
+		res.isCompleteFailure = true
+		return res, err
+	}
+
+	fileChunks, err := ChunkText(content, 500)
+	if err != nil {
+		res.isCompleteFailure = true
+		return res, err
+	}
+
+	for _, chunk := range fileChunks {
+		_, err := fi.Embedder.Embed(chunk.content)
+		if err != nil {
+			res.failedChunkErrors = append(
+				res.failedChunkErrors,
+				fmt.Errorf("chunk %d: %w", chunk.index, err),
+			)
+			continue
+		}
+
+		_, err = fi.Db.Exec(`
+			INSERT INTO files (path, modified_at)
+			VALUES (?, ?)
+		`, "dummy.txt", 0)
+
+		if err != nil {
+			return res, err
+		}
+
+		// Store embedding in DB...
+	}
+
+	if len(res.failedChunkErrors) == 0 {
+		res.isCompleteSuccess = true
+	} else {
+		res.isPartialSuccess = true
+	}
+
+	return res, nil
+}
+
+func ReadFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
 }

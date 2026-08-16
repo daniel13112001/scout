@@ -18,11 +18,12 @@
             "program": "${workspaceFolder}/main.go",
             "args": [
                 "index",
-                "~/Documents",
-                "isRecursive",
-                "false",
-                "extensions",
-                ".txt"
+                "."
+                // "~/Documents",
+                // "isRecursive",
+                // "false",
+                // "extensions",
+                // ".txt"
 
             ]
         },

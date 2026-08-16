@@ -8,6 +8,8 @@ import (
 	"github.com/daniel13112001/scout/app"
 	"github.com/daniel13112001/scout/cli"
 	"github.com/daniel13112001/scout/commands"
+	scoutdb "github.com/daniel13112001/scout/db"
+	"github.com/daniel13112001/scout/embedder"
 	"github.com/daniel13112001/scout/indexer"
 
 	"database/sql"
@@ -67,10 +69,19 @@ func main() {
 		return
 	}
 
+	err = scoutdb.InitDB(db)
+
+	if err != nil {
+		fmt.Println("unable to execute db initialization schema: %w ", err)
+		return
+	}
+
+	embedder := embedder.LocalEmbedder{}
+
 	// Construct application dependencies
 	ctx := context.Background()
 	deps := app.Dependencies{
-		FileIndexer: &indexer.FileIndexer{},
+		FileIndexer: &indexer.FileIndexer{Db: db, Embedder: &embedder},
 	}
 	parsedArgs, err := cli.Parse(args[2:])
 
