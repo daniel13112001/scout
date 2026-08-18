@@ -11,7 +11,7 @@ type Chunk struct{
 func ChunkText(text string, chunkSize int) ([]Chunk, error){
 
 	if chunkSize <= 0 {
-		return nil, errors.New("Chunk size must be greater than zero")
+		return nil, errors.New("chunk size must be greater than zero")
 	}
 
 	var i int
@@ -33,3 +33,22 @@ func ChunkText(text string, chunkSize int) ([]Chunk, error){
 
 	return chunks, nil
 }
+
+
+func ChunkFile(path string, chunkSize int) ([]Chunk, error) {
+
+	content, err := ReadFile(path)
+
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := ChunkText(content, chunkSize)
+
+	if err != nil{
+		return nil, err
+	}
+
+	return res, nil
+}
+

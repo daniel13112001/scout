@@ -6,4 +6,4 @@
 *.so
 *.dylib
 /bin/
-*.db
+*.db*

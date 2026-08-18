@@ -69,6 +69,7 @@ func main() {
 		return
 	}
 
+	//db.SetMaxOpenConns(1)
 	err = scoutdb.InitDB(db)
 
 	if err != nil {
@@ -94,6 +95,8 @@ func main() {
 
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
+	fmt.Printf("%v run completed", cmd)
 
 }
