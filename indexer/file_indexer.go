@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	chunkSize  = 500
-	fileWorkers = 4
+	chunkSize    = 500
+	fileWorkers  = 4
+	writerBuffer = 64
 )
 
 type FileIndexer struct {
@@ -46,6 +47,11 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 	files := make(chan string)
 	errCh := make(chan error, 1)
 
+	// All file workers emit through this single writer, which is the only
+	// goroutine that ever touches the database.
+	writer := newDBWriter(fi.Db, writerBuffer)
+	writer.start()
+
 	var wg sync.WaitGroup
 
 	// Start a bounded number of workers so a directory with many files
@@ -57,7 +63,7 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 			defer wg.Done()
 
 			for path := range files {
-				_, err := fi.processFile(path)
+				_, err := fi.processFile(path, writer)
 				if err != nil {
 					select {
 					case errCh <- err:
@@ -86,6 +92,8 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 	close(files)
 	wg.Wait()
 
+	writerErr := writer.close()
+
 	if walkErr != nil {
 		return walkErr
 	}
@@ -94,13 +102,14 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 	case err := <-errCh:
 		return err
 	default:
-		return nil
+		return writerErr
 	}
 }
 
-// processFile reads and chunks a file, embeds each chunk, and eventually
-// writes the resulting embeddings to the database.
-func (fi *FileIndexer) processFile(path string) (ProcessFileResult, error) {
+// processFile reads and chunks a file, embeds each chunk, and emits the
+// resulting embeddings to the given Emitter for the single db writer to
+// persist.
+func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileResult, error) {
 	chunks, err := ChunkFile(path, chunkSize)
 	if err != nil {
 		return ProcessFileResult{}, err
@@ -109,7 +118,7 @@ func (fi *FileIndexer) processFile(path string) (ProcessFileResult, error) {
 	res := ProcessFileResult{}
 
 	for _, chunk := range chunks {
-		_, err := fi.Embedder.Embed(chunk.content)
+		embedding, err := fi.Embedder.Embed(chunk.content)
 		if err != nil {
 			res.FailedChunkErrors = append(
 				res.FailedChunkErrors,
@@ -118,7 +127,17 @@ func (fi *FileIndexer) processFile(path string) (ProcessFileResult, error) {
 			continue
 		}
 
-		// TODO: send embedding + metadata to DB writer.
+		if err := emitter.Emit(EmbeddingRecord{
+			FilePath:   path,
+			ChunkIndex: chunk.index,
+			Content:    chunk.content,
+			Embedding:  embedding,
+		}); err != nil {
+			res.FailedChunkErrors = append(
+				res.FailedChunkErrors,
+				fmt.Errorf("chunk %d: %w", chunk.index, err),
+			)
+		}
 	}
 
 	return res, nil
