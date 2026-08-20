@@ -17,6 +17,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const (
+	modelPath      = "models/model_qint8_avx512_vnni.onnx"
+	tokenizerPath  = "models/tokenizer.json"
+	ortLibraryPath = "third_party/onnxruntime/libonnxruntime.dylib"
+	embedBatchSize = 32
+)
+
 func main() {
 
 	args := os.Args
@@ -77,12 +84,24 @@ func main() {
 		return
 	}
 
-	embedder := embedder.LocalEmbedder{}
+	localEmbedder, err := embedder.NewLocalEmbedder(embedder.EmbedderConfig{
+		ModelPath:      modelPath,
+		TokenizerPath:  tokenizerPath,
+		OrtLibraryPath: ortLibraryPath,
+		BatchSize:      embedBatchSize,
+	})
+
+	if err != nil {
+		fmt.Println("unable to load embedding model: ", err)
+		return
+	}
+
+	defer localEmbedder.Close()
 
 	// Construct application dependencies
 	ctx := context.Background()
 	deps := app.Dependencies{
-		FileIndexer: &indexer.FileIndexer{Db: db, Embedder: &embedder},
+		FileIndexer: &indexer.FileIndexer{Db: db, Embedder: localEmbedder},
 	}
 	parsedArgs, err := cli.Parse(args[2:])
 

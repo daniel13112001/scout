@@ -63,10 +63,18 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 			defer wg.Done()
 
 			for path := range files {
-				_, err := fi.processFile(path, writer)
+				res, err := fi.processFile(path, writer)
 				if err != nil {
 					select {
 					case errCh <- err:
+					default:
+					}
+					continue
+				}
+
+				if len(res.FailedChunkErrors) > 0 {
+					select {
+					case errCh <- fmt.Errorf("%s: %w", path, errors.Join(res.FailedChunkErrors...)):
 					default:
 					}
 				}
