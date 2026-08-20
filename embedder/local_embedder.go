@@ -17,11 +17,6 @@ type EmbedderConfig struct {
 	BatchSize      int
 }
 
-type EmbeddingResult struct {
-	Embedding []float32
-	Err       error
-}
-
 type LocalEmbedder struct {
 	tokenizer *tokenizers.Tokenizer
 	batchSize int
@@ -55,22 +50,9 @@ func (e *LocalEmbedder) Close() error {
 	return e.tokenizer.Close()
 }
 
-// Embed is intentionally not implemented yet.
-func (e *LocalEmbedder) Embed(text string) ([]float32, error) {
+// Embed is intentionally not implemented yet. It should tokenize and embed
+// texts as one or more batches (see batchSize), returning one embedding per
+// input text in the same order.
+func (e *LocalEmbedder) Embed(texts []string) ([][]float32, error) {
 	return nil, errors.New("LocalEmbedder.Embed: not implemented")
-}
-
-func (e *LocalEmbedder) BatchEmbed(texts []string) []EmbeddingResult {
-	results := make([]EmbeddingResult, len(texts))
-
-	for i, text := range texts {
-		embedding, err := e.Embed(text)
-
-		results[i] = EmbeddingResult{
-			Embedding: embedding,
-			Err:       err,
-		}
-	}
-
-	return results
 }

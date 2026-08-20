@@ -14,20 +14,16 @@ func ChunkText(text string, chunkSize int) ([]Chunk, error){
 		return nil, errors.New("chunk size must be greater than zero")
 	}
 
-	var i int
-	var idx int
+	// Chunk by rune, not by byte, so a chunk boundary never lands in the
+	// middle of a multi-byte UTF-8 codepoint.
+	runes := []rune(text)
 
+	var idx int
 	var chunks []Chunk
 
-
-	for i < len(text){
-		end := i + chunkSize
-		if (end > len(text)){
-			end = len(text)
-		}
-		ch := Chunk{index: idx, content: text[i:end]}
-		chunks = append(chunks, ch)
-		i += chunkSize
+	for i := 0; i < len(runes); i += chunkSize {
+		end := min(i+chunkSize, len(runes))
+		chunks = append(chunks, Chunk{index: idx, content: string(runes[i:end])})
 		idx += 1
 	}
 

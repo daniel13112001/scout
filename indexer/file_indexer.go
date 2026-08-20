@@ -114,32 +114,37 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 	}
 }
 
-// processFile reads and chunks a file, embeds each chunk, and emits the
-// resulting embeddings to the given Emitter for the single db writer to
-// persist.
+// processFile reads and chunks a file, embeds its chunks in a single batch,
+// and emits the resulting embeddings to the given Emitter for the single db
+// writer to persist.
 func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileResult, error) {
 	chunks, err := ChunkFile(path, chunkSize)
 	if err != nil {
 		return ProcessFileResult{}, err
 	}
 
+	if len(chunks) == 0 {
+		return ProcessFileResult{}, nil
+	}
+
+	texts := make([]string, len(chunks))
+	for i, chunk := range chunks {
+		texts[i] = chunk.content
+	}
+
+	embeddings, err := fi.Embedder.Embed(texts)
+	if err != nil {
+		return ProcessFileResult{}, fmt.Errorf("embedding chunks: %w", err)
+	}
+
 	res := ProcessFileResult{}
 
-	for _, chunk := range chunks {
-		embedding, err := fi.Embedder.Embed(chunk.content)
-		if err != nil {
-			res.FailedChunkErrors = append(
-				res.FailedChunkErrors,
-				fmt.Errorf("chunk %d: %w", chunk.index, err),
-			)
-			continue
-		}
-
+	for i, chunk := range chunks {
 		if err := emitter.Emit(EmbeddingRecord{
 			FilePath:   path,
 			ChunkIndex: chunk.index,
 			Content:    chunk.content,
-			Embedding:  embedding,
+			Embedding:  embeddings[i],
 		}); err != nil {
 			res.FailedChunkErrors = append(
 				res.FailedChunkErrors,
