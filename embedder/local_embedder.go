@@ -1,6 +1,7 @@
 package embedder
 
 type LocalEmbedder struct {
+	
 }
 
 type EmbeddingResult struct {

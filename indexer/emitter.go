@@ -2,8 +2,7 @@ package indexer
 
 import (
 	"database/sql"
-	"encoding/binary"
-	"math"
+	"math/rand"
 )
 
 // EmbeddingRecord is a single chunk's embedding, ready to be persisted.
@@ -77,19 +76,12 @@ func (w *dbWriter) close() error {
 }
 
 func (w *dbWriter) write(record EmbeddingRecord) error {
-	blob := encodeEmbedding(record.Embedding)
+	// TODO: write record.Embedding once the vector extension is wired up.
+	placeholder := rand.Int63()
 
 	_, err := w.db.Exec(
 		`INSERT INTO chunks (file_path, chunk_index, content, embedding) VALUES (?, ?, ?, ?)`,
-		record.FilePath, record.ChunkIndex, record.Content, blob,
+		record.FilePath, record.ChunkIndex, record.Content, placeholder,
 	)
 	return err
-}
-
-func encodeEmbedding(embedding []float32) []byte {
-	buf := make([]byte, 4*len(embedding))
-	for i, f := range embedding {
-		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(f))
-	}
-	return buf
 }
