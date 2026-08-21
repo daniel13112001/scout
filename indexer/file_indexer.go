@@ -317,7 +317,15 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 		return ProcessFileResult{Unchanged: true}, nil
 	}
 
-	content, err := ReadFile(path)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ProcessFileResult{}, err
+	}
+
+	fileHashSum := sha256.Sum256(raw)
+	fileHash := fileHashSum[:]
+
+	content, err := extractText(path, raw)
 	if err != nil {
 		return ProcessFileResult{}, err
 	}
@@ -326,9 +334,6 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 	if err != nil {
 		return ProcessFileResult{}, err
 	}
-
-	fileHashSum := sha256.Sum256([]byte(content))
-	fileHash := fileHashSum[:]
 
 	res := ProcessFileResult{}
 
@@ -424,4 +429,16 @@ func ReadFile(path string) (string, error) {
 	}
 
 	return string(data), nil
+}
+
+// extractText returns the text to chunk and embed for path. raw is path's
+// already-read file content, reused directly for every type except PDFs,
+// which need their own extraction step to turn PDF structure into plain
+// text.
+func extractText(path string, raw []byte) (string, error) {
+	if strings.ToLower(filepath.Ext(path)) == ".pdf" {
+		return extractPDFText(path)
+	}
+
+	return string(raw), nil
 }
