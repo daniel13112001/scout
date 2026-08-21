@@ -9,11 +9,6 @@ import (
 	"github.com/daniel13112001/scout/cli"
 )
 
-type indexCommandOptions struct {
-	isRecursive bool
-	extensions  string
-}
-
 func Index(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) error {
 
 	if len(args.Positional) == 0 {
@@ -26,17 +21,11 @@ func Index(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) erro
 
 	dir := args.Positional[0]
 
-	recurse, err := boolFlag(args, "recursive", true)
-
-	if err != nil {
+	// TODO: --recursive is parsed but not yet honored - IndexDirectory
+	// always recurses.
+	if _, err := boolFlag(args, "recursive", true); err != nil {
 		return err
 	}
-
-	// TODO. Add support for extensions. What should the syntax be? comma separated list? Or multiple -extensions?
-	// For now this allows just one extension
-	ext := args.Flags["extensions"]
-
-	optionalFlags := indexCommandOptions{recurse, ext}
 
 	absPath, err := filepath.Abs(dir)
 
@@ -44,15 +33,6 @@ func Index(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) erro
 		return fmt.Errorf("Unable to resolve path %v. Error: %v", dir, err.Error())
 	}
 
-	return deps.FileIndexer.IndexDirectory(absPath, optionalFlags.extensions)
-	//return index(absPath, optionalFlags)
-
-}
-
-func index(path string, optionalFlags indexCommandOptions) error {
-
-	fmt.Printf("Indexing %v with the following flags: isRecursive: %v, extensions %v", path, optionalFlags.isRecursive, optionalFlags.extensions)
-
-	return nil
+	return deps.FileIndexer.IndexDirectory(absPath)
 
 }

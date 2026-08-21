@@ -8,8 +8,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 
+	"github.com/daniel13112001/scout/config"
 	"github.com/daniel13112001/scout/embedder"
 )
 
@@ -28,15 +31,16 @@ const (
 )
 
 type FileIndexer struct {
-	Db       *sql.DB
-	Embedder embedder.Embedder
+	Db          *sql.DB
+	Embedder    embedder.Embedder
+	IndexConfig config.IndexConfig
 }
 
 type ProcessFileResult struct {
 	FailedChunkErrors []error
 }
 
-func NewFileIndexer(db *sql.DB, embedder embedder.Embedder) (*FileIndexer, error) {
+func NewFileIndexer(db *sql.DB, embedder embedder.Embedder, indexConfig config.IndexConfig) (*FileIndexer, error) {
 	if db == nil {
 		return nil, errors.New("db is nil. cannot initialize file indexer")
 	}
@@ -46,13 +50,46 @@ func NewFileIndexer(db *sql.DB, embedder embedder.Embedder) (*FileIndexer, error
 	}
 
 	return &FileIndexer{
-		Db:       db,
-		Embedder: embedder,
+		Db:          db,
+		Embedder:    embedder,
+		IndexConfig: indexConfig,
 	}, nil
 }
 
-// IndexDirectory recursively walks a directory and processes each file.
-func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
+// shouldSkipDir reports whether a directory (by name) should be pruned
+// from the walk entirely, per IndexConfig.IgnoreDirs.
+func (fi *FileIndexer) shouldSkipDir(name string) bool {
+	return slices.Contains(fi.IndexConfig.IgnoreDirs, name)
+}
+
+// shouldIndexFile reports whether a file (by name) passes
+// IndexConfig.IgnorePatterns and IndexConfig.AllowedExtensions.
+func (fi *FileIndexer) shouldIndexFile(name string) bool {
+	for _, pattern := range fi.IndexConfig.IgnorePatterns {
+		if matched, _ := filepath.Match(pattern, name); matched {
+			return false
+		}
+	}
+
+	ext := strings.ToLower(filepath.Ext(name))
+	for _, allowed := range fi.IndexConfig.AllowedExtensions {
+		if ext == strings.ToLower(allowed) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// maxFileSizeBytes returns the configured max file size in bytes, or 0 if
+// MaxFileSizeMB is unset, meaning no limit.
+func (fi *FileIndexer) maxFileSizeBytes() int64 {
+	return int64(fi.IndexConfig.MaxFileSizeMB) * 1024 * 1024
+}
+
+// IndexDirectory recursively walks a directory and processes each file,
+// skipping directories and files per IndexConfig.
+func (fi *FileIndexer) IndexDirectory(dir string) error {
 	files := make(chan string)
 	errCh := make(chan error, 1)
 
@@ -97,10 +134,15 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 		}
 
 		if d.IsDir() {
+			if path != dir && fi.shouldSkipDir(d.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
-		// TODO: filter by allowed extensions.
+		if !fi.shouldIndexFile(d.Name()) {
+			return nil
+		}
 
 		files <- path
 		return nil
@@ -123,11 +165,31 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 	}
 }
 
-// processFile reads and chunks a file, then embeds and emits its chunks in
-// bounded groups (see writeGroupSize) for the single db writer to persist.
-// A file with no chunks is still emitted once, empty, so it's still
-// recorded in files.
+// processFile skips path entirely if it's too large or unchanged since the
+// last index (see maxFileSizeBytes and isUnchanged); otherwise it reads and
+// chunks it, then embeds and emits its chunks in bounded groups (see
+// writeGroupSize) for the single db writer to persist. A file with no
+// chunks is still emitted once, empty, so it's still recorded in files.
 func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileResult, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ProcessFileResult{}, err
+	}
+
+	if maxSize := fi.maxFileSizeBytes(); maxSize > 0 && info.Size() > maxSize {
+		return ProcessFileResult{}, nil
+	}
+
+	modifiedAt := info.ModTime().Unix()
+
+	unchanged, err := fi.isUnchanged(path, modifiedAt)
+	if err != nil {
+		return ProcessFileResult{}, err
+	}
+	if unchanged {
+		return ProcessFileResult{}, nil
+	}
+
 	content, err := ReadFile(path)
 	if err != nil {
 		return ProcessFileResult{}, err
@@ -137,12 +199,6 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 	if err != nil {
 		return ProcessFileResult{}, err
 	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		return ProcessFileResult{}, err
-	}
-	modifiedAt := info.ModTime().Unix()
 
 	fileHashSum := sha256.Sum256([]byte(content))
 	fileHash := fileHashSum[:]
@@ -205,6 +261,23 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 	}
 
 	return res, nil
+}
+
+// isUnchanged reports whether path is already indexed with this exact
+// modification time. This is a plain read, safe to run concurrently across
+// file workers - only writes need to go through the single dbWriter.
+func (fi *FileIndexer) isUnchanged(path string, modifiedAt int64) (bool, error) {
+	var stored int64
+
+	err := fi.Db.QueryRow(`SELECT modified_at FROM files WHERE path = ?`, path).Scan(&stored)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return stored == modifiedAt, nil
 }
 
 func ReadFile(path string) (string, error) {

@@ -102,7 +102,7 @@ func main() {
 	// Construct application dependencies
 	ctx := context.Background()
 	deps := app.Dependencies{
-		FileIndexer: &indexer.FileIndexer{Db: db, Embedder: localEmbedder},
+		FileIndexer: &indexer.FileIndexer{Db: db, Embedder: localEmbedder, IndexConfig: cfg.Index},
 	}
 	parsedArgs, err := cli.Parse(args[2:])
 
