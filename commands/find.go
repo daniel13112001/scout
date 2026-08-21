@@ -42,6 +42,12 @@ func Find(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) error
 		restrict = "."
 	}
 
+	restrict, err := cli.ExpandHome(restrict)
+
+	if err != nil {
+		return err
+	}
+
 	results, err := deps.Searcher.Search(query, search.Options{Max: max, Restrict: restrict})
 
 	if err != nil {

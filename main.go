@@ -126,6 +126,6 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	fmt.Printf("%v run completed", cmd)
+	fmt.Printf("%v run completed", args[1])
 
 }

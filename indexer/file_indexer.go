@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/daniel13112001/scout/config"
 	"github.com/daniel13112001/scout/embedder"
@@ -37,7 +39,48 @@ type FileIndexer struct {
 }
 
 type ProcessFileResult struct {
+	// Skipped is true when the file exceeded the configured max size.
+	Skipped bool
+	// Unchanged is true when the file's mtime matched what's already
+	// indexed, so it was left untouched.
+	Unchanged         bool
+	ChunksEmbedded    int
 	FailedChunkErrors []error
+}
+
+// IndexStats summarizes one IndexDirectory run.
+type IndexStats struct {
+	FilesIndexed   int
+	FilesUnchanged int
+	FilesTooLarge  int
+	FilesFiltered  int
+	ChunksEmbedded int
+	Errors         int
+	Elapsed        time.Duration
+}
+
+// statsAccumulator is IndexStats' concurrency-safe counterpart, updated
+// from both the (single-threaded) walk callback and the (concurrent) file
+// workers.
+type statsAccumulator struct {
+	filesIndexed   atomic.Int64
+	filesUnchanged atomic.Int64
+	filesTooLarge  atomic.Int64
+	filesFiltered  atomic.Int64
+	chunksEmbedded atomic.Int64
+	errors         atomic.Int64
+}
+
+func (s *statsAccumulator) result(elapsed time.Duration) IndexStats {
+	return IndexStats{
+		FilesIndexed:   int(s.filesIndexed.Load()),
+		FilesUnchanged: int(s.filesUnchanged.Load()),
+		FilesTooLarge:  int(s.filesTooLarge.Load()),
+		FilesFiltered:  int(s.filesFiltered.Load()),
+		ChunksEmbedded: int(s.chunksEmbedded.Load()),
+		Errors:         int(s.errors.Load()),
+		Elapsed:        elapsed,
+	}
 }
 
 func NewFileIndexer(db *sql.DB, embedder embedder.Embedder, indexConfig config.IndexConfig) (*FileIndexer, error) {
@@ -90,7 +133,24 @@ func (fi *FileIndexer) maxFileSizeBytes() int64 {
 // IndexDirectory walks a directory and processes each file, skipping
 // directories and files per IndexConfig. If recursive is false, only files
 // directly in dir are processed - subdirectories are not descended into.
-func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) error {
+// dir is resolved through any symlinks first - a symlinked directory
+// passed as the root would otherwise be treated as an unrecognized file
+// (WalkDir's root Lstat reports the link, not what it points to) and
+// silently skipped instead of indexed.
+func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, error) {
+	start := time.Now()
+
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return IndexStats{}, fmt.Errorf("path does not exist: %s", dir)
+		}
+		return IndexStats{}, fmt.Errorf("resolving path %s: %w", dir, err)
+	}
+	dir = resolved
+
+	var stats statsAccumulator
+
 	files := make(chan string)
 	errCh := make(chan error, 1)
 
@@ -112,6 +172,7 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) error {
 			for path := range files {
 				res, err := fi.processFile(path, writer)
 				if err != nil {
+					stats.errors.Add(1)
 					select {
 					case errCh <- err:
 					default:
@@ -119,7 +180,18 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) error {
 					continue
 				}
 
+				switch {
+				case res.Skipped:
+					stats.filesTooLarge.Add(1)
+				case res.Unchanged:
+					stats.filesUnchanged.Add(1)
+				default:
+					stats.filesIndexed.Add(1)
+				}
+				stats.chunksEmbedded.Add(int64(res.ChunksEmbedded))
+
 				if len(res.FailedChunkErrors) > 0 {
+					stats.errors.Add(1)
 					select {
 					case errCh <- fmt.Errorf("%s: %w", path, errors.Join(res.FailedChunkErrors...)):
 					default:
@@ -147,6 +219,7 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) error {
 		}
 
 		if !fi.shouldIndexFile(d.Name()) {
+			stats.filesFiltered.Add(1)
 			return nil
 		}
 
@@ -159,15 +232,17 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) error {
 
 	writerErr := writer.close()
 
+	result := stats.result(time.Since(start))
+
 	if walkErr != nil {
-		return walkErr
+		return result, walkErr
 	}
 
 	select {
 	case err := <-errCh:
-		return err
+		return result, err
 	default:
-		return writerErr
+		return result, writerErr
 	}
 }
 
@@ -183,7 +258,7 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 	}
 
 	if maxSize := fi.maxFileSizeBytes(); maxSize > 0 && info.Size() > maxSize {
-		return ProcessFileResult{}, nil
+		return ProcessFileResult{Skipped: true}, nil
 	}
 
 	modifiedAt := info.ModTime().Unix()
@@ -193,7 +268,7 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 		return ProcessFileResult{}, err
 	}
 	if unchanged {
-		return ProcessFileResult{}, nil
+		return ProcessFileResult{Unchanged: true}, nil
 	}
 
 	content, err := ReadFile(path)
@@ -263,7 +338,10 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 				res.FailedChunkErrors,
 				fmt.Errorf("writing chunks %d-%d: %w", group[0].index, group[len(group)-1].index, err),
 			)
+			continue
 		}
+
+		res.ChunksEmbedded += len(chunkRecords)
 	}
 
 	return res, nil
