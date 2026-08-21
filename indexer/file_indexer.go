@@ -107,12 +107,13 @@ func NewFileIndexer(db *sql.DB, embedder embedder.Embedder, indexConfig config.I
 }
 
 // shouldSkipDir reports whether a directory should be pruned from the walk
-// entirely: either its name is an exact match in IndexConfig.IgnoreDirs,
-// or it contains one of IndexConfig.IgnoreDirMarkers - for directories
-// identifiable by a marker file but not by a fixed name (e.g. a Python
-// virtualenv, always identifiable by pyvenv.cfg regardless of what the
-// venv directory itself is called).
-func (fi *FileIndexer) shouldSkipDir(path, name string) bool {
+// entirely: its name is an exact match in IndexConfig.IgnoreDirs, it
+// contains one of IndexConfig.IgnoreDirMarkers (for directories
+// identifiable by a marker file but not by a fixed name, e.g. a Python
+// virtualenv - always identifiable by pyvenv.cfg regardless of what the
+// venv directory itself is called), or it's excluded by the root
+// .gitignore.
+func (fi *FileIndexer) shouldSkipDir(rootDir, path, name string, gitignoreRules []gitignoreRule) bool {
 	if slices.Contains(fi.IndexConfig.IgnoreDirs, name) {
 		return true
 	}
@@ -123,12 +124,17 @@ func (fi *FileIndexer) shouldSkipDir(path, name string) bool {
 		}
 	}
 
-	return false
+	return matchesGitignore(gitignoreRules, rootDir, path, true)
 }
 
-// shouldIndexFile reports whether a file (by name) passes
-// IndexConfig.IgnorePatterns and IndexConfig.AllowedExtensions.
-func (fi *FileIndexer) shouldIndexFile(name string) bool {
+// shouldIndexFile reports whether a file passes IndexConfig.IgnorePatterns
+// and IndexConfig.AllowedExtensions, and isn't excluded by the root
+// .gitignore.
+func (fi *FileIndexer) shouldIndexFile(rootDir, path, name string, gitignoreRules []gitignoreRule) bool {
+	if matchesGitignore(gitignoreRules, rootDir, path, false) {
+		return false
+	}
+
 	for _, pattern := range fi.IndexConfig.IgnorePatterns {
 		if matched, _ := filepath.Match(pattern, name); matched {
 			return false
@@ -169,6 +175,11 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, e
 		return IndexStats{}, fmt.Errorf("resolving path %s: %w", dir, err)
 	}
 	dir = resolved
+
+	gitignoreRules, err := loadGitignore(dir)
+	if err != nil {
+		fi.Logger.Printf("reading .gitignore in %s: %v (continuing without it)", dir, err)
+	}
 
 	fi.Logger.Printf("index start: dir=%s recursive=%v", dir, recursive)
 
@@ -240,14 +251,14 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, e
 				if !recursive {
 					return filepath.SkipDir
 				}
-				if fi.shouldSkipDir(path, d.Name()) {
+				if fi.shouldSkipDir(dir, path, d.Name(), gitignoreRules) {
 					return filepath.SkipDir
 				}
 			}
 			return nil
 		}
 
-		if !fi.shouldIndexFile(d.Name()) {
+		if !fi.shouldIndexFile(dir, path, d.Name(), gitignoreRules) {
 			stats.filesFiltered.Add(1)
 			return nil
 		}
