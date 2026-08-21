@@ -43,6 +43,8 @@ func main() {
 		find       Search indexed files
 		index      Index files
 		sync       Synchronize the index
+		config     View or change scout's configuration
+		clean      Remove the search index and log, for a fresh start
 		help       Show help
 
 		`
@@ -50,6 +52,27 @@ func main() {
 
 		return
 
+	}
+
+	// clean only ever removes scout's own generated files - it doesn't
+	// need the database, embedder, or searcher, so it's handled here,
+	// before any of their (slow) setup, rather than paying that cost just
+	// to delete two files. It isn't in commandMap for the same reason: it
+	// doesn't fit the Command signature every other command shares.
+	if args[1] == "clean" {
+		cfg, err := config.Load()
+		if err != nil {
+			fmt.Println("unable to load config: ", err)
+			return
+		}
+
+		if err := commands.Clean(cfg); err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		fmt.Print("clean run completed")
+		return
 	}
 
 	cmd, ok := commandMap[args[1]]

@@ -18,6 +18,8 @@ func Help(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) error
 		find       Search indexed files
 		index      Index files
 		sync       Synchronize the index
+		config     View or change scout's configuration
+		clean      Remove the search index and log, for a fresh start
 		help       Show help
 
 		`
