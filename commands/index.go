@@ -21,9 +21,9 @@ func Index(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) erro
 
 	dir := args.Positional[0]
 
-	// TODO: --recursive is parsed but not yet honored - IndexDirectory
-	// always recurses.
-	if _, err := boolFlag(args, "recursive", true); err != nil {
+	recursive, err := boolFlag(args, "recursive", true)
+
+	if err != nil {
 		return err
 	}
 
@@ -33,6 +33,6 @@ func Index(ctx context.Context, args cli.ParsedArgs, deps app.Dependencies) erro
 		return fmt.Errorf("Unable to resolve path %v. Error: %v", dir, err.Error())
 	}
 
-	return deps.FileIndexer.IndexDirectory(absPath)
+	return deps.FileIndexer.IndexDirectory(absPath, recursive)
 
 }

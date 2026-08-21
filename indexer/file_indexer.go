@@ -87,9 +87,10 @@ func (fi *FileIndexer) maxFileSizeBytes() int64 {
 	return int64(fi.IndexConfig.MaxFileSizeMB) * 1024 * 1024
 }
 
-// IndexDirectory recursively walks a directory and processes each file,
-// skipping directories and files per IndexConfig.
-func (fi *FileIndexer) IndexDirectory(dir string) error {
+// IndexDirectory walks a directory and processes each file, skipping
+// directories and files per IndexConfig. If recursive is false, only files
+// directly in dir are processed - subdirectories are not descended into.
+func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) error {
 	files := make(chan string)
 	errCh := make(chan error, 1)
 
@@ -134,8 +135,13 @@ func (fi *FileIndexer) IndexDirectory(dir string) error {
 		}
 
 		if d.IsDir() {
-			if path != dir && fi.shouldSkipDir(d.Name()) {
-				return filepath.SkipDir
+			if path != dir {
+				if !recursive {
+					return filepath.SkipDir
+				}
+				if fi.shouldSkipDir(d.Name()) {
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}
