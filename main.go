@@ -8,6 +8,7 @@ import (
 	"github.com/daniel13112001/scout/app"
 	"github.com/daniel13112001/scout/cli"
 	"github.com/daniel13112001/scout/commands"
+	"github.com/daniel13112001/scout/config"
 	scoutdb "github.com/daniel13112001/scout/db"
 	"github.com/daniel13112001/scout/embedder"
 	"github.com/daniel13112001/scout/indexer"
@@ -15,13 +16,6 @@ import (
 	"database/sql"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
-)
-
-const (
-	modelPath      = "models/model_qint8_avx512_vnni.onnx"
-	tokenizerPath  = "models/tokenizer.json"
-	ortLibraryPath = "third_party/onnxruntime/libonnxruntime.dylib"
-	embedBatchSize = 32
 )
 
 func main() {
@@ -62,7 +56,14 @@ func main() {
 		return
 	}
 
-	db, err := sql.Open("sqlite3", "scout.db")
+	cfg, err := config.Load()
+
+	if err != nil {
+		fmt.Println("unable to load config: ", err)
+		return
+	}
+
+	db, err := sql.Open("sqlite3", cfg.DB.Path)
 
 	if err != nil {
 		fmt.Println("unable to initialize database: ", err)
@@ -85,10 +86,10 @@ func main() {
 	}
 
 	localEmbedder, err := embedder.NewLocalEmbedder(embedder.EmbedderConfig{
-		ModelPath:      modelPath,
-		TokenizerPath:  tokenizerPath,
-		OrtLibraryPath: ortLibraryPath,
-		BatchSize:      embedBatchSize,
+		ModelPath:      cfg.Embedder.ModelPath,
+		TokenizerPath:  cfg.Embedder.TokenizerPath,
+		OrtLibraryPath: cfg.Embedder.OrtLibraryPath,
+		BatchSize:      cfg.Embedder.BatchSize,
 	})
 
 	if err != nil {

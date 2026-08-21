@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/tetratelabs/wazero v1.8.2 // indirect
 	golang.org/x/sys v0.47.0 // indirect
