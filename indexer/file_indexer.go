@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -13,7 +14,15 @@ import (
 )
 
 const (
-	chunkSize    = 500
+	chunkSize = 500
+
+	// writeGroupSize bounds how many chunks of one file are embedded and
+	// written together. Keeping this bounded (rather than processing a
+	// whole file as one unit) keeps memory and per-transaction size
+	// independent of file size, and means a failure partway through a huge
+	// file doesn't lose everything already embedded.
+	writeGroupSize = 32
+
 	fileWorkers  = 4
 	writerBuffer = 64
 )
@@ -114,41 +123,83 @@ func (fi *FileIndexer) IndexDirectory(dir string, extensions string) error {
 	}
 }
 
-// processFile reads and chunks a file, embeds its chunks in a single batch,
-// and emits the resulting embeddings to the given Emitter for the single db
-// writer to persist.
+// processFile reads and chunks a file, then embeds and emits its chunks in
+// bounded groups (see writeGroupSize) for the single db writer to persist.
+// A file with no chunks is still emitted once, empty, so it's still
+// recorded in files.
 func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileResult, error) {
-	chunks, err := ChunkFile(path, chunkSize)
+	content, err := ReadFile(path)
 	if err != nil {
 		return ProcessFileResult{}, err
 	}
 
-	if len(chunks) == 0 {
-		return ProcessFileResult{}, nil
-	}
-
-	texts := make([]string, len(chunks))
-	for i, chunk := range chunks {
-		texts[i] = chunk.content
-	}
-
-	embeddings, err := fi.Embedder.Embed(texts)
+	chunks, err := ChunkText(content, chunkSize)
 	if err != nil {
-		return ProcessFileResult{}, fmt.Errorf("embedding chunks: %w", err)
+		return ProcessFileResult{}, err
 	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return ProcessFileResult{}, err
+	}
+	modifiedAt := info.ModTime().Unix()
+
+	fileHashSum := sha256.Sum256([]byte(content))
+	fileHash := fileHashSum[:]
 
 	res := ProcessFileResult{}
 
-	for i, chunk := range chunks {
-		if err := emitter.Emit(EmbeddingRecord{
-			FilePath:   path,
-			ChunkIndex: chunk.index,
-			Content:    chunk.content,
-			Embedding:  embeddings[i],
+	if len(chunks) == 0 {
+		if err := emitter.Emit(FileRecord{Path: path, ModifiedAt: modifiedAt, FileHash: fileHash}); err != nil {
+			res.FailedChunkErrors = append(res.FailedChunkErrors, fmt.Errorf("recording empty file: %w", err))
+		}
+		return res, nil
+	}
+
+	modelID := fi.Embedder.ModelID()
+
+	for start := 0; start < len(chunks); start += writeGroupSize {
+		end := min(start+writeGroupSize, len(chunks))
+		group := chunks[start:end]
+
+		texts := make([]string, len(group))
+		for i, chunk := range group {
+			texts[i] = chunk.content
+		}
+
+		embeddings, err := fi.Embedder.Embed(texts)
+		if err != nil {
+			res.FailedChunkErrors = append(
+				res.FailedChunkErrors,
+				fmt.Errorf("embedding chunks %d-%d: %w", group[0].index, group[len(group)-1].index, err),
+			)
+			continue
+		}
+
+		chunkRecords := make([]ChunkRecord, len(group))
+		for i, chunk := range group {
+			contentHashSum := sha256.Sum256([]byte(chunk.content))
+
+			chunkRecords[i] = ChunkRecord{
+				ChunkIndex:     chunk.index,
+				Content:        chunk.content,
+				ContentHash:    contentHashSum[:],
+				StartLine:      chunk.startLine,
+				EndLine:        chunk.endLine,
+				EmbeddingModel: modelID,
+				Embedding:      embeddings[i],
+			}
+		}
+
+		if err := emitter.Emit(FileRecord{
+			Path:       path,
+			ModifiedAt: modifiedAt,
+			FileHash:   fileHash,
+			Chunks:     chunkRecords,
 		}); err != nil {
 			res.FailedChunkErrors = append(
 				res.FailedChunkErrors,
-				fmt.Errorf("chunk %d: %w", chunk.index, err),
+				fmt.Errorf("writing chunks %d-%d: %w", group[0].index, group[len(group)-1].index, err),
 			)
 		}
 	}

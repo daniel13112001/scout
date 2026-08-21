@@ -1,8 +1,11 @@
 package embedder
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math"
+	"os"
 
 	"github.com/daulet/tokenizers"
 	ort "github.com/yalue/onnxruntime_go"
@@ -29,9 +32,15 @@ type LocalEmbedder struct {
 	session   *ort.DynamicAdvancedSession
 	batchSize int
 	hiddenDim int64
+	modelID   string
 }
 
 func NewLocalEmbedder(cfg EmbedderConfig) (*LocalEmbedder, error) {
+	modelID, err := hashFile(cfg.ModelPath)
+	if err != nil {
+		return nil, fmt.Errorf("hashing model file: %w", err)
+	}
+
 	tokenizer, err := tokenizers.FromFile(cfg.TokenizerPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading tokenizer: %w", err)
@@ -74,7 +83,25 @@ func NewLocalEmbedder(cfg EmbedderConfig) (*LocalEmbedder, error) {
 		session:   session,
 		batchSize: cfg.BatchSize,
 		hiddenDim: hiddenDim,
+		modelID:   modelID,
 	}, nil
+}
+
+func hashFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// ModelID returns a hash of the model file's bytes. It changes if and only
+// if the model file itself changes, so it's used to detect embeddings that
+// were produced by a different (or since-updated) model.
+func (e *LocalEmbedder) ModelID() string {
+	return e.modelID
 }
 
 func hiddenDimOf(outputs []ort.InputOutputInfo) (int64, error) {
