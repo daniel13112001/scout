@@ -14,7 +14,7 @@ import (
 
 	"database/sql"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 const (
@@ -62,7 +62,7 @@ func main() {
 		return
 	}
 
-	db, err := sql.Open("sqlite", "scout.db")
+	db, err := sql.Open("sqlite3", "scout.db")
 
 	if err != nil {
 		fmt.Println("unable to initialize database: ", err)

@@ -2,7 +2,13 @@ package indexer
 
 import (
 	"database/sql"
-	"math/rand"
+	"fmt"
+
+	// Importing this package registers a build of SQLite (via the ncruces
+	// driver) with the sqlite-vec extension compiled in, and provides
+	// SerializeFloat32 for encoding embeddings into the BLOB format it
+	// expects.
+	vecembed "github.com/asg017/sqlite-vec-go-bindings/ncruces"
 )
 
 // EmbeddingRecord is a single chunk's embedding, ready to be persisted.
@@ -76,12 +82,14 @@ func (w *dbWriter) close() error {
 }
 
 func (w *dbWriter) write(record EmbeddingRecord) error {
-	// TODO: write record.Embedding once the vector extension is wired up.
-	placeholder := rand.Int63()
+	embeddingBlob, err := vecembed.SerializeFloat32(record.Embedding)
+	if err != nil {
+		return fmt.Errorf("serializing embedding: %w", err)
+	}
 
-	_, err := w.db.Exec(
+	_, err = w.db.Exec(
 		`INSERT INTO chunks (file_path, chunk_index, content, embedding) VALUES (?, ?, ?, ?)`,
-		record.FilePath, record.ChunkIndex, record.Content, placeholder,
+		record.FilePath, record.ChunkIndex, record.Content, embeddingBlob,
 	)
 	return err
 }

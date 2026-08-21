@@ -3,16 +3,14 @@ module github.com/daniel13112001/scout
 go 1.25.4
 
 require (
-	github.com/daulet/tokenizers v1.27.0 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/yalue/onnxruntime_go v1.35.0 // indirect
+	github.com/asg017/sqlite-vec-go-bindings v0.1.6
+	github.com/daulet/tokenizers v1.27.0
+	github.com/ncruces/go-sqlite3 v0.20.3
+	github.com/yalue/onnxruntime_go v1.35.0
+)
+
+require (
+	github.com/ncruces/julianday v1.0.0 // indirect
+	github.com/tetratelabs/wazero v1.8.2 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	modernc.org/libc v1.74.4 // indirect
-	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.56.0 // indirect
 )
