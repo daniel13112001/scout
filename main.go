@@ -12,6 +12,7 @@ import (
 	scoutdb "github.com/daniel13112001/scout/db"
 	"github.com/daniel13112001/scout/embedder"
 	"github.com/daniel13112001/scout/indexer"
+	"github.com/daniel13112001/scout/search"
 
 	"database/sql"
 
@@ -99,10 +100,18 @@ func main() {
 
 	defer localEmbedder.Close()
 
+	searcher, err := search.NewSearcher(db, localEmbedder)
+
+	if err != nil {
+		fmt.Println("unable to initialize searcher: ", err)
+		return
+	}
+
 	// Construct application dependencies
 	ctx := context.Background()
 	deps := app.Dependencies{
 		FileIndexer: &indexer.FileIndexer{Db: db, Embedder: localEmbedder, IndexConfig: cfg.Index},
+		Searcher:    searcher,
 	}
 	parsedArgs, err := cli.Parse(args[2:])
 
