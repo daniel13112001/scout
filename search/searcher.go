@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
+	"time"
 
 	vecembed "github.com/asg017/sqlite-vec-go-bindings/ncruces"
 	"github.com/daniel13112001/scout/embedder"
@@ -27,6 +29,7 @@ const (
 type Searcher struct {
 	Db       *sql.DB
 	Embedder embedder.Embedder
+	Logger   *log.Logger
 }
 
 // Options configures a single Search call.
@@ -49,7 +52,7 @@ type Result struct {
 	Score     float64
 }
 
-func NewSearcher(db *sql.DB, embedder embedder.Embedder) (*Searcher, error) {
+func NewSearcher(db *sql.DB, embedder embedder.Embedder, logger *log.Logger) (*Searcher, error) {
 	if db == nil {
 		return nil, errors.New("db is nil. cannot initialize searcher")
 	}
@@ -58,12 +61,18 @@ func NewSearcher(db *sql.DB, embedder embedder.Embedder) (*Searcher, error) {
 		return nil, errors.New("embedder is nil. cannot initialize searcher")
 	}
 
-	return &Searcher{Db: db, Embedder: embedder}, nil
+	if logger == nil {
+		return nil, errors.New("logger is nil. cannot initialize searcher")
+	}
+
+	return &Searcher{Db: db, Embedder: embedder, Logger: logger}, nil
 }
 
 // Search embeds query and returns the most similar indexed chunks, ranked
 // highest score first.
 func (s *Searcher) Search(query string, opts Options) ([]Result, error) {
+	start := time.Now()
+
 	max := opts.Max
 	if max <= 0 {
 		max = defaultMax
@@ -78,10 +87,12 @@ func (s *Searcher) Search(query string, opts Options) ([]Result, error) {
 		restrictPrefix = abs
 	}
 
+	embedStart := time.Now()
 	embeddings, err := s.Embedder.Embed([]string{query})
 	if err != nil {
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
+	embedElapsed := time.Since(embedStart)
 
 	queryBlob, err := vecembed.SerializeFloat32(embeddings[0])
 	if err != nil {
@@ -89,6 +100,8 @@ func (s *Searcher) Search(query string, opts Options) ([]Result, error) {
 	}
 
 	modelID := s.Embedder.ModelID()
+
+	queryStart := time.Now()
 
 	rows, err := s.Db.Query(`
 		SELECT c.content, c.start_line, c.end_line, f.path, v.distance, c.embedding_model
@@ -149,6 +162,11 @@ func (s *Searcher) Search(query string, opts Options) ([]Result, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("reading search results: %w", err)
 	}
+
+	queryElapsed := time.Since(queryStart)
+
+	s.Logger.Printf("search: query=%q embed=%s query_exec=%s results=%d total=%s",
+		query, embedElapsed, queryElapsed, len(results), time.Since(start))
 
 	return results, nil
 }

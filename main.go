@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"time"
 
 	"github.com/daniel13112001/scout/app"
 	"github.com/daniel13112001/scout/cli"
@@ -64,6 +66,17 @@ func main() {
 		return
 	}
 
+	logFile, err := config.OpenLog()
+
+	if err != nil {
+		fmt.Println("unable to open log file: ", err)
+		return
+	}
+
+	defer logFile.Close()
+
+	logger := log.New(logFile, "", log.LstdFlags)
+
 	db, err := sql.Open("sqlite3", cfg.DB.Path)
 
 	if err != nil {
@@ -86,6 +99,8 @@ func main() {
 		return
 	}
 
+	embedderLoadStart := time.Now()
+
 	localEmbedder, err := embedder.NewLocalEmbedder(embedder.EmbedderConfig{
 		ModelPath:      cfg.Embedder.ModelPath,
 		TokenizerPath:  cfg.Embedder.TokenizerPath,
@@ -100,7 +115,9 @@ func main() {
 
 	defer localEmbedder.Close()
 
-	searcher, err := search.NewSearcher(db, localEmbedder)
+	logger.Printf("embedder loaded in %s", time.Since(embedderLoadStart))
+
+	searcher, err := search.NewSearcher(db, localEmbedder, logger)
 
 	if err != nil {
 		fmt.Println("unable to initialize searcher: ", err)
@@ -110,8 +127,9 @@ func main() {
 	// Construct application dependencies
 	ctx := context.Background()
 	deps := app.Dependencies{
-		FileIndexer: &indexer.FileIndexer{Db: db, Embedder: localEmbedder, IndexConfig: cfg.Index},
+		FileIndexer: &indexer.FileIndexer{Db: db, Embedder: localEmbedder, IndexConfig: cfg.Index, Logger: logger},
 		Searcher:    searcher,
+		Logger:      logger,
 	}
 	parsedArgs, err := cli.Parse(args[2:])
 

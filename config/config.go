@@ -36,16 +36,55 @@ type IndexConfig struct {
 	IgnorePatterns    []string `toml:"ignore_patterns"`
 }
 
-// Path returns the resolved location of scout's global config file,
-// following each OS's own convention for where per-user config lives
-// (e.g. ~/.config on Linux, ~/Library/Application Support on macOS,
-// %AppData% on Windows).
-func Path() (string, error) {
+// scoutDir returns scout's per-user directory, following each OS's own
+// convention for where per-user config lives (e.g. ~/.config on Linux,
+// ~/Library/Application Support on macOS, %AppData% on Windows). The
+// config file, database, and log file all live here.
+func scoutDir() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("resolving user config directory: %w", err)
 	}
-	return filepath.Join(dir, "scout", "scoutconfig.toml"), nil
+	return filepath.Join(dir, "scout"), nil
+}
+
+// Path returns the resolved location of scout's global config file.
+func Path() (string, error) {
+	dir, err := scoutDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "scoutconfig.toml"), nil
+}
+
+// LogPath returns the resolved location of scout's log file.
+func LogPath() (string, error) {
+	dir, err := scoutDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "scout.log"), nil
+}
+
+// OpenLog opens scout's log file for appending, creating scout's directory
+// and the file itself if they don't exist yet. The caller is responsible
+// for closing it.
+func OpenLog() (*os.File, error) {
+	path, err := LogPath()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("creating scout directory: %w", err)
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("opening log file: %w", err)
+	}
+
+	return f, nil
 }
 
 // Load reads scout's global config for normal runtime use, writing the

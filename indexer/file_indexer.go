@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -36,6 +37,7 @@ type FileIndexer struct {
 	Db          *sql.DB
 	Embedder    embedder.Embedder
 	IndexConfig config.IndexConfig
+	Logger      *log.Logger
 }
 
 type ProcessFileResult struct {
@@ -83,7 +85,7 @@ func (s *statsAccumulator) result(elapsed time.Duration) IndexStats {
 	}
 }
 
-func NewFileIndexer(db *sql.DB, embedder embedder.Embedder, indexConfig config.IndexConfig) (*FileIndexer, error) {
+func NewFileIndexer(db *sql.DB, embedder embedder.Embedder, indexConfig config.IndexConfig, logger *log.Logger) (*FileIndexer, error) {
 	if db == nil {
 		return nil, errors.New("db is nil. cannot initialize file indexer")
 	}
@@ -92,10 +94,15 @@ func NewFileIndexer(db *sql.DB, embedder embedder.Embedder, indexConfig config.I
 		return nil, errors.New("embedder is nil. cannot initialize file indexer")
 	}
 
+	if logger == nil {
+		return nil, errors.New("logger is nil. cannot initialize file indexer")
+	}
+
 	return &FileIndexer{
 		Db:          db,
 		Embedder:    embedder,
 		IndexConfig: indexConfig,
+		Logger:      logger,
 	}, nil
 }
 
@@ -149,6 +156,8 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, e
 	}
 	dir = resolved
 
+	fi.Logger.Printf("index start: dir=%s recursive=%v", dir, recursive)
+
 	var stats statsAccumulator
 
 	files := make(chan string)
@@ -173,6 +182,10 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, e
 				res, err := fi.processFile(path, writer)
 				if err != nil {
 					stats.errors.Add(1)
+					// errCh only ever surfaces the first error from a run
+					// (see below) - every error is logged here regardless,
+					// so none are silently lost.
+					fi.Logger.Printf("error processing %s: %v", path, err)
 					select {
 					case errCh <- err:
 					default:
@@ -192,8 +205,10 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, e
 
 				if len(res.FailedChunkErrors) > 0 {
 					stats.errors.Add(1)
+					joined := errors.Join(res.FailedChunkErrors...)
+					fi.Logger.Printf("error processing %s: %v", path, joined)
 					select {
-					case errCh <- fmt.Errorf("%s: %w", path, errors.Join(res.FailedChunkErrors...)):
+					case errCh <- fmt.Errorf("%s: %w", path, joined):
 					default:
 					}
 				}
@@ -234,6 +249,10 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, e
 
 	result := stats.result(time.Since(start))
 
+	fi.Logger.Printf("index complete: dir=%s indexed=%d unchanged=%d too_large=%d filtered=%d chunks_embedded=%d errors=%d elapsed=%s",
+		dir, result.FilesIndexed, result.FilesUnchanged, result.FilesTooLarge, result.FilesFiltered,
+		result.ChunksEmbedded, result.Errors, result.Elapsed)
+
 	if walkErr != nil {
 		return result, walkErr
 	}
@@ -252,6 +271,8 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, e
 // writeGroupSize) for the single db writer to persist. A file with no
 // chunks is still emitted once, empty, so it's still recorded in files.
 func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileResult, error) {
+	processStart := time.Now()
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return ProcessFileResult{}, err
@@ -295,6 +316,8 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 
 	modelID := fi.Embedder.ModelID()
 
+	var embedElapsed time.Duration
+
 	for start := 0; start < len(chunks); start += writeGroupSize {
 		end := min(start+writeGroupSize, len(chunks))
 		group := chunks[start:end]
@@ -304,7 +327,9 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 			texts[i] = chunk.content
 		}
 
+		embedStart := time.Now()
 		embeddings, err := fi.Embedder.Embed(texts)
+		embedElapsed += time.Since(embedStart)
 		if err != nil {
 			res.FailedChunkErrors = append(
 				res.FailedChunkErrors,
@@ -343,6 +368,9 @@ func (fi *FileIndexer) processFile(path string, emitter Emitter) (ProcessFileRes
 
 		res.ChunksEmbedded += len(chunkRecords)
 	}
+
+	fi.Logger.Printf("processed %s: chunks=%d embed=%s total=%s",
+		path, res.ChunksEmbedded, embedElapsed, time.Since(processStart))
 
 	return res, nil
 }
