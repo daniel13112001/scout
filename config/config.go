@@ -34,6 +34,14 @@ type IndexConfig struct {
 	AllowedExtensions []string `toml:"allowed_extensions"`
 	IgnoreDirs        []string `toml:"ignore_dirs"`
 	IgnorePatterns    []string `toml:"ignore_patterns"`
+
+	// IgnoreDirMarkers names files whose presence inside a directory means
+	// that whole directory should be skipped, regardless of what the
+	// directory itself is named. This is for the case IgnoreDirs' exact
+	// name matching can't handle - e.g. a Python virtualenv is always
+	// identifiable by a pyvenv.cfg file at its root, but the directory
+	// holding it can be named anything ("venv", ".venv", "rl-venv", ...).
+	IgnoreDirMarkers []string `toml:"ignore_dir_markers"`
 }
 
 // scoutDir returns scout's per-user directory, following each OS's own

@@ -106,10 +106,24 @@ func NewFileIndexer(db *sql.DB, embedder embedder.Embedder, indexConfig config.I
 	}, nil
 }
 
-// shouldSkipDir reports whether a directory (by name) should be pruned
-// from the walk entirely, per IndexConfig.IgnoreDirs.
-func (fi *FileIndexer) shouldSkipDir(name string) bool {
-	return slices.Contains(fi.IndexConfig.IgnoreDirs, name)
+// shouldSkipDir reports whether a directory should be pruned from the walk
+// entirely: either its name is an exact match in IndexConfig.IgnoreDirs,
+// or it contains one of IndexConfig.IgnoreDirMarkers - for directories
+// identifiable by a marker file but not by a fixed name (e.g. a Python
+// virtualenv, always identifiable by pyvenv.cfg regardless of what the
+// venv directory itself is called).
+func (fi *FileIndexer) shouldSkipDir(path, name string) bool {
+	if slices.Contains(fi.IndexConfig.IgnoreDirs, name) {
+		return true
+	}
+
+	for _, marker := range fi.IndexConfig.IgnoreDirMarkers {
+		if _, err := os.Stat(filepath.Join(path, marker)); err == nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 // shouldIndexFile reports whether a file (by name) passes
@@ -226,7 +240,7 @@ func (fi *FileIndexer) IndexDirectory(dir string, recursive bool) (IndexStats, e
 				if !recursive {
 					return filepath.SkipDir
 				}
-				if fi.shouldSkipDir(d.Name()) {
+				if fi.shouldSkipDir(path, d.Name()) {
 					return filepath.SkipDir
 				}
 			}

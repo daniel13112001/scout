@@ -31,10 +31,22 @@ allowed_extensions = [
 
 # Directories skipped everywhere, regardless of .gitignore. A .gitignore
 # in the indexed directory, if present, is always respected on top of this.
+# Matched by exact name only - see ignore_dir_markers below for
+# directories that can be named anything (e.g. virtualenvs).
 ignore_dirs = [
     "node_modules", ".git", ".svn", ".hg",
     "vendor", "dist", "build", ".next",
     ".venv", "venv", "__pycache__", ".cache", "target",
+    "site-packages",
+]
+
+# Directories skipped based on a marker file inside them, regardless of
+# what the directory itself is named. A Python virtualenv always has a
+# pyvenv.cfg at its root, even though the venv directory itself can be
+# named anything ("venv", ".venv", "rl-venv", ...), which ignore_dirs'
+# exact-name matching can't catch.
+ignore_dir_markers = [
+    "pyvenv.cfg",
 ]
 
 # File-name glob patterns, matched the same way .gitignore patterns are.
